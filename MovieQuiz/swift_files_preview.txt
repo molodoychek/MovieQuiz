@@ -1,0 +1,505 @@
+import Foundation
+
+struct GameResult {
+    let correct: Int
+    let total: Int
+    let date: Date
+}
+
+extension GameResult: Comparable {
+    static func < (lhs: GameResult, rhs: GameResult) -> Bool {
+        
+        if lhs.correct != rhs.correct {
+            return lhs.correct < rhs.correct
+        }
+        
+        let lhsAccuracy = Double(lhs.correct) / Double(lhs.total)
+        let rhsAccuracy = Double(rhs.correct) / Double(rhs.total)
+        return lhsAccuracy < rhsAccuracy
+    }
+}
+import Foundation
+
+struct MostPopularMovies: Decodable {
+    let errorMessage: String
+    let items: [MostPopularMovie]
+}
+
+struct MostPopularMovie: Decodable {
+    let title: String
+    let rating: String
+    let imageURL: URL
+    
+    var resizedImageURL: URL {
+        let urlString = imageURL.absoluteString
+        let imageUrlString = urlString.components(separatedBy: "._")[0] + "._V0_UX600_.jpg"
+        
+        guard let newURL = URL(string: imageUrlString) else {
+            return imageURL
+        }
+        
+        return newURL
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case title = "fullTitle"
+        case rating = "imDbRating"
+        case imageURL = "image"
+    }
+}
+import UIKit
+
+ struct QuizStepViewModel {
+    let image: UIImage
+    let question: String
+    let questionNumber: String
+}
+import Foundation
+
+struct AlertModel {
+    let title: String
+    let message: String
+    let buttonText: String
+    let completion: () -> Void
+}
+import Foundation
+
+ struct QuizQuestion {
+    let image: Data
+    let text: String
+    let correctAnswer: Bool
+}
+
+import Foundation
+
+ struct QuizResultsViewModel {
+    let title: String
+    let text: String
+    let buttonText: String
+}
+
+import UIKit
+
+@main
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        return true
+    }
+    
+    
+    
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+    }
+    
+    func application(
+        _ application: UIApplication,
+        didDiscardSceneSessions sceneSessions: Set<UISceneSession>
+    ) {}
+}
+import UIKit
+
+
+protocol MovieQuizPresenterProtocol: AnyObject {
+    var viewController: MovieQuizViewControllerProtocol? { get set }
+    var currentQuestion: QuizQuestion? { get set }
+    var isLastQuestion: Bool { get }
+    
+    func yesButtonClicked()
+    func noButtonClicked()
+    func convert(model: QuizQuestion) -> QuizStepViewModel
+    func restartGame()
+    
+    func startLoadingQuestions()
+    func requestNextQuestion()
+    func makeResultsMessage() -> String
+}
+import UIKit
+
+final class MovieQuizViewController: UIViewController, MovieQuizViewControllerProtocol {
+    
+    // MARK: - IBOutlets
+    @IBOutlet private weak var imageView: UIImageView!
+    @IBOutlet private weak var textLabel: UILabel!
+    @IBOutlet private weak var counterLabel: UILabel!
+    @IBOutlet private weak var activityIndicator: UIActivityIndicatorView!
+    
+    // MARK: - Properties
+    private var alertPresenter: AlertPresenter!
+    private var presenter: MovieQuizPresenterProtocol!
+    
+    // MARK: - Lifecycle
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        presenter = MovieQuizPresenter(viewController: self)
+        alertPresenter = AlertPresenter(viewController: self)
+        
+        showLoadingIndicator()
+        presenter.startLoadingQuestions()
+    }
+    
+    // MARK: - IBActions
+    @IBAction private func yesButtonClicked(_ sender: Any) {
+        presenter.yesButtonClicked()
+    }
+    
+    @IBAction private func noButtonClicked(_ sender: Any) {
+        presenter.noButtonClicked()
+    }
+    
+    // MARK: - MovieQuizViewControllerProtocol
+    
+    func show(quiz step: QuizStepViewModel) {
+        imageView.image = step.image
+        textLabel.text = step.question
+        counterLabel.text = step.questionNumber
+    }
+    
+    func highlightImageBorder(isCorrect: Bool) {
+        imageView.layer.masksToBounds = true
+        imageView.layer.borderWidth = 8
+        imageView.layer.borderColor = isCorrect ? UIColor.ypGreen.cgColor : UIColor.ypRed.cgColor
+        imageView.layer.cornerRadius = 20
+    }
+    
+    func removeImageBorder() {
+import UIKit
+
+protocol MovieQuizViewControllerProtocol: AnyObject {
+    func show(quiz step: QuizStepViewModel)
+    func showLoadingIndicator()
+    func hideLoadingIndicator()
+    func showNetworkError(message: String)
+    func showFinalResults()
+    func highlightImageBorder(isCorrect: Bool)
+    func removeImageBorder()
+    func showNextQuestion()
+}
+import UIKit
+
+
+final class MovieQuizPresenter: MovieQuizPresenterProtocol, QuestionFactoryDelegate{
+    
+    // MARK: - Properties
+    private let questionsAmount: Int = 10
+    private var currentQuestionIndex = 0
+    private var correctAnswers = 0
+    private var isButtonEnabled = true
+    
+    // Шаг 7: QuestionFactory теперь в презентере
+    private var questionFactory: QuestionFactoryProtocol?
+    // Шаг 8: StatisticService в презентере
+    private var statisticService: StatisticServiceProtocol!
+    
+    weak var viewController: MovieQuizViewControllerProtocol?
+    var currentQuestion: QuizQuestion?
+    
+    var isLastQuestion: Bool {
+        currentQuestionIndex == questionsAmount - 1
+    }
+    
+    private var questionNumberText: String {
+        "\(currentQuestionIndex + 1)/\(questionsAmount)"
+    }
+    
+    // MARK: - Initializer
+    init(viewController: MovieQuizViewControllerProtocol? = nil) {
+        self.viewController = viewController
+        self.statisticService = StatisticService()
+    }
+    
+    // MARK: - Public Methods
+    
+    func setupQuestionFactory(delegate: QuestionFactoryDelegate) {
+        let moviesLoader = MoviesLoader()
+        questionFactory = QuestionFactory(moviesLoader: moviesLoader, delegate: delegate)
+    }
+    
+    func startLoadingQuestions() {
+        let moviesLoader = MoviesLoader()
+        questionFactory = QuestionFactory(moviesLoader: moviesLoader, delegate: self)
+        questionFactory?.loadData()
+    }
+    
+    func requestNextQuestion() {
+        questionFactory?.requestNextQuestion()
+    }
+    
+import UIKit
+
+final class AlertPresenter {
+    private weak var viewController: UIViewController?
+    
+    init(viewController: UIViewController) {
+        self.viewController = viewController
+    }
+    
+    func show(alert model: AlertModel) {
+        let alert = UIAlertController(
+            title: model.title,
+            message: model.message,
+            preferredStyle: .alert
+        )
+        
+        let action = UIAlertAction(
+            title: model.buttonText,
+            style: .default
+        ) { _ in
+            model.completion()
+        }
+        
+        alert.addAction(action)
+        
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.viewController?.present(alert, animated: true, completion: nil)
+        }
+    }
+}
+import Foundation
+
+
+protocol QuestionFactoryDelegate: AnyObject {
+    func didReceiveNextQuestion(question: QuizQuestion?)
+    func didLoadDataFromServer()
+    func didFailToLoadData(with error: Error)
+}
+import Foundation
+
+protocol StatisticServiceProtocol {
+    var gamesCount: Int { get }
+    var bestGame: GameResult { get }
+    var totalAccuracy: Double { get }
+    
+    func store(correct count: Int, total amount: Int)
+}
+
+import Foundation
+
+protocol QuestionFactoryProtocol {
+    var delegate: QuestionFactoryDelegate? { get set }  
+    func requestNextQuestion()
+    func loadData()
+}
+import Foundation
+
+extension Array {
+    func safe(at index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+import UIKit
+
+extension UIColor { }
+import Foundation
+
+extension Date {
+    var dateTimeString: String { DateFormatter.defaultDateTime.string(from: self) }
+}
+
+private extension DateFormatter {
+    static let defaultDateTime: DateFormatter = {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "dd.MM.YY hh:mm"
+        return dateFormatter
+    }()
+}
+import Foundation
+
+
+protocol NetworkRouting {
+    func fetch(url: URL, handler: @escaping (Result<Data, Error>) -> Void)
+}
+
+
+struct NetworkClient: NetworkRouting {
+    
+    private enum NetworkError: Error {
+        case codeError
+    }
+    
+    func fetch(url: URL, handler: @escaping (Result<Data, Error>) -> Void) {
+        let request = URLRequest(url: url)
+        
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                handler(.failure(error))
+                return
+            }
+            
+            if let response = response as? HTTPURLResponse,
+               response.statusCode < 200 || response.statusCode >= 300 {
+                handler(.failure(NetworkError.codeError))
+                return
+            }
+            
+            guard let data = data else { return }
+            handler(.success(data))
+        }
+        
+        task.resume()
+    }
+}
+import Foundation
+
+final class StatisticService: StatisticServiceProtocol {
+    private enum Keys: String {
+        case correct, total, bestGameCorrect, bestGameTotal, bestGameDate, gamesCount
+    }
+    
+    private let userDefaults = UserDefaults.standard
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd.MM.YY HH:mm"
+        return formatter
+    }()
+    
+    
+    
+    var gamesCount: Int {
+        get { userDefaults.integer(forKey: Keys.gamesCount.rawValue) }
+        set { userDefaults.set(newValue, forKey: Keys.gamesCount.rawValue) }
+    }
+    
+    var totalAccuracy: Double {
+        get {
+            let total = userDefaults.integer(forKey: Keys.total.rawValue)
+            guard total > 0 else { return 0 }
+            let correct = userDefaults.integer(forKey: Keys.correct.rawValue)
+            return Double(correct) / Double(total) * 100
+        }
+    }
+    
+    var bestGame: GameResult {
+        get {
+            let correct = userDefaults.integer(forKey: Keys.bestGameCorrect.rawValue)
+            let total = userDefaults.integer(forKey: Keys.bestGameTotal.rawValue)
+            let date = userDefaults.object(forKey: Keys.bestGameDate.rawValue) as? Date ?? Date()
+            return GameResult(correct: correct, total: total, date: date)
+        }
+        set {
+            userDefaults.set(newValue.correct, forKey: Keys.bestGameCorrect.rawValue)
+            userDefaults.set(newValue.total, forKey: Keys.bestGameTotal.rawValue)
+            userDefaults.set(newValue.date, forKey: Keys.bestGameDate.rawValue)
+        }
+    }
+    
+    
+    
+    func store(correct count: Int, total amount: Int) {
+        
+        let currentGamesCount = userDefaults.integer(forKey: Keys.gamesCount.rawValue)
+        userDefaults.set(currentGamesCount + 1, forKey: Keys.gamesCount.rawValue)
+
+import Foundation
+
+
+
+class QuestionFactory: QuestionFactoryProtocol {
+    /*
+     private let questions: [QuizQuestion] = [
+     QuizQuestion(
+     image: "The Godfather",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: true),
+     QuizQuestion(
+     image: "The Dark Knight",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: true),
+     QuizQuestion(
+     image: "Kill Bill",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: true),
+     QuizQuestion(
+     image: "The Avengers",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: true),
+     QuizQuestion(
+     image: "Deadpool",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: true),
+     QuizQuestion(
+     image: "The Green Knight",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: true),
+     QuizQuestion(
+     image: "Old",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: false),
+     QuizQuestion(
+     image: "The Ice Age Adventures of Buck Wild",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: false),
+     QuizQuestion(
+     image: "Tesla",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: false),
+     QuizQuestion(
+     image: "Vivarium",
+     text: "Рейтинг этого фильма больше чем 6?",
+     correctAnswer: false)
+     ]
+     */
+import Foundation
+
+protocol MoviesLoading {
+    func loadMovies(handler: @escaping (Result<MostPopularMovies, Error>) -> Void)
+}
+
+struct MoviesLoader: MoviesLoading {
+    private let networkClient: NetworkRouting
+    
+    init(networkClient: NetworkRouting = NetworkClient()) {
+          self.networkClient = networkClient
+      }
+    
+    private var mostPopularMoviesUrl: URL {
+        guard let url = URL(string: "https://tv-api.com/en/API/Top250Movies/k_zcuw1ytf") else {
+            preconditionFailure("Unable to construct mostPopularMoviesUrl")
+        }
+        return url
+    }
+    
+    func loadMovies(handler: @escaping (Result<MostPopularMovies, Error>) -> Void) {
+        networkClient.fetch(url: mostPopularMoviesUrl) { result in
+            switch result {
+            case .success(let data):
+                do {
+                    let mostPopularMovies = try JSONDecoder().decode(MostPopularMovies.self, from: data)
+                    handler(.success(mostPopularMovies))
+                } catch {
+                    handler(.failure(error))
+                }
+            case .failure(let error):
+                handler(.failure(error))
+            }
+        }
+    }}
+import UIKit
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    
+    var window: UIWindow?
+    
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions
+    ) {
+        guard (scene as? UIWindowScene) != nil else { return }
+    }
+    
+    func sceneDidDisconnect(_ scene: UIScene) {}
+    func sceneDidBecomeActive(_ scene: UIScene) {}
+    func sceneWillResignActive(_ scene: UIScene) {}
+    func sceneWillEnterForeground(_ scene: UIScene) {}
+    func sceneDidEnterBackground(_ scene: UIScene) {}
+}
