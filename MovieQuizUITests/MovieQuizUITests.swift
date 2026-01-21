@@ -1,41 +1,140 @@
-//
-//  MovieQuizUITests.swift
-//  MovieQuizUITests
-//
-//  Created by Александр on 15.01.26.
-//
-
 import XCTest
 
 final class MovieQuizUITests: XCTestCase {
+    
+    var app: XCUIApplication!
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
+        try super.setUpWithError()
+        
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
+        app = XCUIApplication()
+        app.launchArguments = ["UITesting"]
+        app.launch()
     }
 
     override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+        app.terminate()
+        app = nil
+        
+        try super.tearDownWithError()
     }
 
-    @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
-
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+    // Тест 1: Кнопка "Да" меняет вопрос
+    func testYesButton() {
+        // Ждем загрузки
+        sleep(3)
+        
+        // Проверяем существование элементов
+        let poster = app.images["Poster"]
+        XCTAssertTrue(poster.waitForExistence(timeout: 5), "Постер не найден")
+        
+        let yesButton = app.buttons["Yes"]
+        XCTAssertTrue(yesButton.waitForExistence(timeout: 5), "Кнопка 'Yes' не найдена")
+        
+        let indexLabel = app.staticTexts["Index"]
+        XCTAssertTrue(indexLabel.waitForExistence(timeout: 5), "Label 'Index' не найден")
+        
+        // Запоминаем начальное состояние
+        let firstPosterData = poster.screenshot().pngRepresentation
+        let initialIndex = indexLabel.label
+        
+        // Нажимаем кнопку "Да"
+        yesButton.tap()
+        sleep(3)
+        
+        // Проверяем изменения
+        let secondPosterData = poster.screenshot().pngRepresentation
+        let newIndex = indexLabel.label
+        
+        XCTAssertNotEqual(firstPosterData, secondPosterData, "Постер должен измениться")
+        XCTAssertNotEqual(newIndex, initialIndex, "Индекс должен измениться")
+        XCTAssertEqual(newIndex, "2/10", "После первого ответа должно быть 2/10")
     }
-
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
+    
+    // Тест 2: Кнопка "Нет" меняет вопрос
+    func testNoButton() {
+        sleep(3)
+        
+        let poster = app.images["Poster"]
+        XCTAssertTrue(poster.waitForExistence(timeout: 5))
+        
+        let noButton = app.buttons["No"]
+        XCTAssertTrue(noButton.waitForExistence(timeout: 5))
+        
+        let indexLabel = app.staticTexts["Index"]
+        XCTAssertTrue(indexLabel.waitForExistence(timeout: 5))
+        
+        let firstPosterData = poster.screenshot().pngRepresentation
+        let initialIndex = indexLabel.label
+        
+        noButton.tap()
+        sleep(3)
+        
+        let secondPosterData = poster.screenshot().pngRepresentation
+        let newIndex = indexLabel.label
+        
+        XCTAssertNotEqual(firstPosterData, secondPosterData)
+        XCTAssertNotEqual(newIndex, initialIndex)
+        XCTAssertEqual(newIndex, "2/10")
+    }
+    
+    // Тест 3: Появление алерта после раунда
+    func testGameFinish() {
+        sleep(2)
+        
+        let noButton = app.buttons["No"]
+        XCTAssertTrue(noButton.waitForExistence(timeout: 5))
+        
+        // Отвечаем на 10 вопросов
+        for i in 1...10 {
+            noButton.tap()
+            sleep(2)
+            
+            // Можно проверить прогресс
+            if i < 10 {
+                let indexLabel = app.staticTexts["Index"]
+                XCTAssertEqual(indexLabel.label, "\(i+1)/10", "После \(i)-го вопроса должно быть \(i+1)/10")
+            }
         }
+
+        // Проверяем алерт
+        let alert = app.alerts["Этот раунд окончен!"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5), "Алерт не появился")
+        
+        XCTAssertEqual(alert.label, "Этот раунд окончен!", "Неверный заголовок алерта")
+        
+        let playAgainButton = alert.buttons["Сыграть ещё раз"]
+        XCTAssertTrue(playAgainButton.exists, "Кнопка 'Сыграть ещё раз' не найдена")
+    }
+
+    // Тест 4: Скрытие алерта и перезапуск игры
+    func testAlertDismiss() {
+        sleep(2)
+        
+        let noButton = app.buttons["No"]
+        XCTAssertTrue(noButton.waitForExistence(timeout: 5))
+        
+        // Проходим раунд
+        for _ in 1...10 {
+            noButton.tap()
+            sleep(2)
+        }
+        
+        // Нажимаем кнопку в алерте
+        let alert = app.alerts["Этот раунд окончен!"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        
+        let playAgainButton = alert.buttons["Сыграть ещё раз"]
+        playAgainButton.tap()
+        
+        sleep(2)
+        
+        // Проверяем сброс игры
+        let indexLabel = app.staticTexts["Index"]
+        XCTAssertTrue(indexLabel.waitForExistence(timeout: 5))
+        
+        XCTAssertFalse(alert.exists, "Алерт должен скрыться после нажатия")
+        XCTAssertEqual(indexLabel.label, "1/10", "Игра должна перезапуститься с 1/10")
     }
 }
