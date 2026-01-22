@@ -87,7 +87,7 @@ class QuestionFactory: QuestionFactoryProtocol {
             guard let self = self else { return }
             let index = (0..<self.movies.count).randomElement() ?? 0
             
-            guard let movie = self.movies[safe: index] else { return }
+            guard let movie = self.movies.safe(at: index) else { return }
             
             var imageData = Data()
             
